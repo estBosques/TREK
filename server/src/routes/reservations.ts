@@ -30,7 +30,7 @@ router.get('/', authenticate, (req: Request, res: Response) => {
 router.post('/', authenticate, (req: Request, res: Response) => {
   const authReq = req as AuthRequest;
   const { tripId } = req.params;
-  const { title, reservation_time, reservation_end_time, location, confirmation_number, notes, day_id, place_id, assignment_id, status, type, accommodation_id, metadata, create_accommodation } = req.body;
+  const { title, reservation_time, reservation_end_time, location, confirmation_number, notes, day_id, place_id, assignment_id, status, type, accommodation_id, metadata, create_accommodation, create_budget_entry } = req.body;
 
   const trip = verifyTripAccess(tripId, authReq.user.id);
   if (!trip) return res.status(404).json({ error: 'Trip not found' });
@@ -48,6 +48,19 @@ router.post('/', authenticate, (req: Request, res: Response) => {
 
   if (accommodationCreated) {
     broadcast(tripId, 'accommodation:created', {}, req.headers['x-socket-id'] as string);
+  }
+
+  // Auto-create budget entry if price was provided
+  if (create_budget_entry && create_budget_entry.total_price > 0) {
+    try {
+      const { createBudgetItem } = require('../services/budgetService');
+      const budgetItem = createBudgetItem(tripId, {
+        name: title,
+        category: create_budget_entry.category || type || 'Other',
+        total_price: create_budget_entry.total_price,
+      });
+      broadcast(tripId, 'budget:created', { item: budgetItem }, req.headers['x-socket-id'] as string);
+    } catch {}
   }
 
   res.status(201).json({ reservation });
